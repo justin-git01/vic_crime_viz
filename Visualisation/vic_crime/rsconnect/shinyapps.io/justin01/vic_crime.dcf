@@ -1,0 +1,12 @@
+name: vic_crime
+title: vic_crime
+username: justin01
+account: justin01
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 10307750
+bundleId:
+url: https://justin01.shinyapps.io/vic_crime/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

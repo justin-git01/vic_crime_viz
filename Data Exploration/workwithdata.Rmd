@@ -1,0 +1,357 @@
+---
+title: "RMARKDOWN"
+output: html_document
+date: '2023-09-13'
+---
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(readxl)
+library(visdat)
+library(dplyr)
+library(kableExtra)
+library(tidyr)
+library(plotly)
+library(sf)
+library(viridis)
+library(knitr)
+```
+
+### Criminal incidents and rate per 100,000 population by police region and local government area - April 2013 to March 2023
+
+```{r}
+crime_lga_tot_incidents <- read_excel(here::here("data/Data_Tables_LGA_Criminal_Incidents_Year_Ending_March_2023.xlsx"), sheet = 3)
+
+crime_lga_tot_incidents <- crime_lga_tot_incidents %>% 
+  na.omit() %>%
+  select(-`Year ending`) %>%
+  filter(`Local Government Area` != "Total")
+
+sum(is.na(crime_lga_tot_incidents))
+```
+
+### Criminal incidents and rate per 100,000 population by principal offence, local government area and police service area - April 2013 to March 2023
+
+```{r}
+# Total incidents and rate per 100,000 by lga and pinciple offence
+crime_lga_offence <- read_excel(here::here("data/Data_Tables_LGA_Criminal_Incidents_Year_Ending_March_2023.xlsx"), sheet = 4)
+
+crime_lga_offence <- crime_lga_offence %>%
+  select(-c(`Police Service Area` , `PSA Rate per 100,000 population`, `Year ending`))
+
+sum(is.na(crime_lga_offence))
+```
+
+### Criminal incidents by principal offence, local government area and postcode or suburb/town - April 2013 to March 2023
+
+```{r}
+crime_lga_offence_bypostcode <- read_excel(here::here("data/Data_Tables_LGA_Criminal_Incidents_Year_Ending_March_2023.xlsx"), sheet = 5)
+
+crime_lga_offence_bypostcode <- crime_lga_offence_bypostcode %>%
+  select(-c(`Year ending`))
+```
+
+## Satisfaction with your standard of living ranked from 0-100 (very dissatisfied to very satisfied)
+
+```{r, warning=F, message=F}
+satisfaction_standard_living <- read_excel(here::here("data/RWS2021_DataTables_v1.0.xlsx"), sheet = 7, skip = 4)
+
+satisfaction_standard_living <- satisfaction_standard_living %>%
+  filter(State == "Vic") %>%
+  select(c(`Region / group`, `Type of region / group`, `Average score (mean 0-100)`)) %>%
+  mutate(`Average score (mean 0-100)` = round(`Average score (mean 0-100)`, 0)) %>%
+  slice(4:n()) %>%
+  mutate(`Region / group` = gsub("\\([^\\)]+\\)", "", `Region / group`)) %>%
+  distinct(`Region / group`, .keep_all = TRUE) %>%
+  mutate(`Region / group` = gsub(" and ", ", ", `Region / group`)) %>%
+  separate_rows(`Region / group`, sep = ", ") %>%
+  filter(`Region / group` != "surrounding suburbs ")
+
+satisfaction_standard_living$`Region / group` <- trimws(satisfaction_standard_living$`Region / group`)
+
+clean_ssl <- satisfaction_standard_living %>%
+  group_by(`Region / group`) %>%
+  summarise(Average_Score = mean(`Average score (mean 0-100)`))
+```
+
+```{r, warning=F, message=F, eval = F}
+sum(is.na(satisfaction_standard_living))
+```
+
+## Index of relative socio-economic disadvantage ranked within state
+```{r, warning=F, message=F}
+SED_index <- read_excel(here::here("data/2033055001 - lga indexes.xls"), sheet = 3, skip = 4)
+
+SED_index <- SED_index %>%
+  select(`2016 Local Government Area (LGA) Name`, `...4`, `Ranking within State or Territory`, `...11`) %>%
+  filter(`Ranking within State or Territory` == "VIC") %>%
+  select(-`Ranking within State or Territory`) %>% 
+  rename(LGA = `2016 Local Government Area (LGA) Name`,
+         Score = `...4`,
+         Rank = `...11`) %>%
+  filter(LGA != "Unincorporated Vic") %>%
+  mutate(LGA = gsub("\\([^\\)]+\\)", "", LGA),
+         Score = as.numeric(Score),
+         Rank = as.numeric(Rank))
+```
+
+```{r, eval = F}
+sum(is.na(SED_index))
+```
+
+## Index of education and occupation ranked within state
+```{r, warning=F, message=F}
+EandO_index <- read_excel(here::here("data/2033055001 - lga indexes.xls"), sheet = 6, skip = 4)
+
+EandO_index <- EandO_index %>%
+  select(`2016 Local Government Area (LGA) Name`, `...4`, `Ranking within State or Territory`, `...11`) %>%
+  filter(`Ranking within State or Territory` == "VIC") %>%
+  select(-`Ranking within State or Territory`) %>% 
+  rename(LGA = `2016 Local Government Area (LGA) Name`,
+         Score = `...4`,
+         Rank = `...11`) %>%
+  filter(LGA != "Unincorporated Vic") %>%
+  mutate(LGA = gsub("\\([^\\)]+\\)", "", LGA),
+         Score = as.numeric(Score),
+         Rank = as.numeric(Rank))
+```
+
+# Data Checking
+## Criminal Incidents Data 
+
+For data consistency checking, unique() function will be used across all 5 sheets and all character variables to ensure there is no misspelling and there is no year outside the range predefined when fetching the dataset, April 2013 to March 2023. Examination shows a fair result where all 5 sheets variable are consistent.
+
+### Criminal incidents and rate per 100,000 population by police region and local government area - April 2013 to March 2023
+
+```{r, eval = F}
+unique(crime_lga_tot_incidents$Year)
+unique(crime_lga_tot_incidents$`Police Region`)
+unique(crime_lga_tot_incidents$`Local Government Area`)
+```
+
+#### Identify Outliers: Use box plots or histograms to identify any potential outliers in the "Rate per 100,000 population" variable within specific regions or LGAs.
+
+```{r}
+ggplot(crime_lga_tot_incidents, aes(x = `Police Region`, y = `Rate per 100,000 population`)) +
+  geom_boxplot()
+
+
+gg <- ggplot(crime_lga_tot_incidents, aes(x = `Local Government Area`, y = `Rate per 100,000 population`)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+# Manually set fill colors for specific labels
+gg + scale_x_discrete(labels = function(x) {
+  ifelse(x %in% c("Melbourne", "Latrobe", "Yarra"), x, "")
+}) +
+scale_fill_manual(values = c("Melbourne" = "red", "Latrobe" = "red", "Yarra" = "red"))
+
+
+```
+
+The boxplot **cross-ref here** for Police Region indicates there are multiple outliers for North West Metro and Eastern region. We take a further step by plotting boxplot for LGA and immediately notice that there are 3 LGAs, which are Melbourne, Latrobe and Yarra with outstanding mean compared to the rest. More importantly, these 3 LGAs belong to either North West Metro and Eastern region, which explains the outliers.
+
+These figures indicate the most 3 dangerous areas in Victoria are Melbourne, Latrobe and Yarra based on number of criminal incidents per 100,000 population.
+
+#### Spatial Visualization: Create geographical maps using tools like ggplot2 in R to visualize the distribution of incidents and rates across different local government areas within Victoria. This can help identify areas with particularly high or low rates.
+
+
+
+
+### Criminal incidents and rate per 100,000 population by principal offence, local government area and police service area - April 2013 to March 2023
+
+#### Offense Analysis: Analyze the distribution of incidents across principal offense categories. Create bar charts or pie charts to illustrate the composition of offenses.
+
+```{r}
+# Assuming your dataset is named "crime_data" and includes columns "Offense_Category" and "Incidents_Count"
+ggplot(crime_lga_offence, aes(x = `Offence Division`, y = `Incidents Recorded`, fill = `Offence Division`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Distribution of Incidents Across Offense Categories", x = "Offense Category", y = "Incident Count") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r}
+ plot_ly(data = crime_lga_offence, labels = ~`Offence Division`, values = ~`Incidents Recorded`, type = "pie") %>%
+  layout(title = "Distribution of Incidents Across Offense Categories")
+```
+
+### Criminal incidents by principal offence, local government area and postcode or suburb/town - April 2013 to March 2023
+
+
+## Satisfaction with your standard of living ranked from 0-100 (very dissatisfied to very satisfied)
+
+```{r}
+clean_ssl <- clean_ssl %>% 
+  rename(`Local Government Area` = LGA)
+vis_dat(clean_ssl)
+ggplot(clean_ssl, aes(x = Average_Score)) + 
+  geom_histogram() +
+  labs(x = "Average Score")
+
+ggplot(clean_ssl, aes(y = Average_Score)) +
+  geom_boxplot() +
+  labs(y = "Average Score")
+
+clean_ssl %>% filter(Average_Score > 84)
+
+fivenum(clean_ssl$Average_Score)
+```
+
+## Index of relative socio-economic disadvantage ranked within state
+```{r}
+vis_dat(SED_index)
+
+ggplot(SED_index, aes(y = Score)) +
+  geom_boxplot() +
+  labs(y = "Score")
+
+ggplot(EandO_index, aes(y = Score)) +
+  geom_boxplot() +
+  labs(y = "Average Score")
+
+fivenum(SED_index$Score)
+fivenum(EandO_index$Score)
+
+library(tourr)
+highlight_key(penguins) %>%
+  GGally::ggpairs(aes(color = species),
+                  column = 3:6) %>%
+  ggplotly() %>%
+  highlight("plotly_selected")
+  
+```
+
+
+
+
+```{r}
+vic_map <- read_sf(here::here("data/gda2020_vicgrid/VMADMIN/LGA_POLYGON.shp"))
+vic_map <- vic_map %>%
+  mutate(LGA = gsub("\\([^\\)]+\\)", "", LGA_NAME))
+vic_map <- vic_map %>%
+  select(LGA, geometry)
+
+vic_map <- vic_map %>% 
+  arrange(LGA)
+  
+
+crime_lga_tot_incidents <- crime_lga_tot_incidents %>%
+  mutate(`Local Government Area` = toupper(`Local Government Area`))
+
+crime_lga_tot_incidents %>%
+  group_by(`Local Government Area`) %>%
+  summarise(ave_100k = mean(`Rate per 100,000 population`)) %>%
+  left_join(vic_map, by = c("Local Government Area" = "LGA")) %>%
+  ggplot() +
+  geom_sf(aes(geometry = geometry, fill = ave_100k),
+    color = "white"
+  )  +
+  ggtitle("Average Incident rate per 100,000 population by LGA",
+    subtitle = "Victoria"
+  )
+
+```
+
+```{r}
+clean_ssl <- clean_ssl %>%
+  mutate(`Region / group` = toupper(`Region / group`))
+
+ssl_crime_tot <- left_join(crime_lga_tot_incidents, clean_ssl, by = c("Local Government Area" = "Region / group"))
+
+ssl_crime_tot <- ssl_crime_tot %>%
+  filter(Year == 2021) %>%
+  na.omit()
+
+correlation_coefficient <- cor(ssl_crime_tot$`Rate per 100,000 population`, ssl_crime_tot$Average_Score, method = "pearson")
+
+correlation_test <- cor.test(ssl_crime_tot$`Rate per 100,000 population`, ssl_crime_tot$Average_Score, method = "pearson")
+
+ggplot(ssl_crime_tot, aes(`Rate per 100,000 population`, Average_Score)) +
+  geom_point() +
+  labs(title = "Scatter plot of criminal incidents and satisfaction with living standard index", 
+       y = "Average Score")
+
+fit <- lm(`Rate per 100,000 population` ~ Average_Score  , ssl_crime_tot)
+summary(fit)
+```
+
+```{r}
+SED_index <- SED_index %>%
+  mutate(LGA = toupper(LGA)) %>%
+  rename(Score_SED = Score,
+         Rank_SED = Rank)
+SED_index$LGA <- trimws(SED_index$LGA)
+
+SED_index <- SED_index %>%
+  rename(`Local Government Area` = LGA)
+
+
+EandO_index <- EandO_index %>%
+  mutate(LGA = toupper(LGA)) %>%
+  rename(Score_EandO = Score,
+         Rank_EandO = Rank)
+EandO_index$LGA <- trimws(EandO_index$LGA)
+
+EandO_index <- EandO_index %>%
+  rename(`Local Government Area` = LGA)
+# Left join with SED_index
+full_crime_SED <- left_join(crime_lga_tot_incidents, SED_index, by = c("Local Government Area" = "LGA"))
+
+# Left join with EandO_index
+full_crime_EandO <- left_join(crime_lga_tot_incidents, EandO_index, by = c("Local Government Area" = "LGA"))
+
+# Combine the datasets
+full_crime_tot <- full_crime_SED %>%
+  left_join(full_crime_EandO, by = c("Year", "Local Government Area"))
+
+full_crime_tot <- full_crime_tot %>%
+  filter(Year == 2016) %>%
+  na.omit()
+
+
+# Select the relevant columns from your dataset
+selected_columns <- full_crime_tot %>%
+  select(`Rate per 100,000 population.x`, Score_SED, Score_EandO)
+
+# Calculate the Pearson correlation matrix
+cor_matrix <- cor(selected_columns, use = "complete.obs", method = "pearson")
+
+# Print the correlation matrix
+print(cor_matrix)
+
+ggplot(full_crime_tot, aes(`Rate per 100,000 population.x`, Score_SED)) +
+  geom_point() +
+  labs(title = "Scatter plot of criminal incidents 
+and socio-economic disadvantage index", 
+       y = "Average Score", 
+       x = "Rate per 100,000 population") +
+  geom_smooth(method = "lm")
+
+ggplot(full_crime_tot, aes(`Rate per 100,000 population.x`, Score_EandO)) +
+  geom_point() +
+  labs(title = "Scatter plot of criminal incidents 
+and education and occupation disadvantage index", 
+       y = "Average Score", 
+       x = "Rate per 100,000 population") +
+  geom_smooth(method = "lm")
+
+fit2 <- lm(`Rate per 100,000 population.x` ~ Score_SED + Score_EandO, full_crime_tot)
+summary(fit2)
+```
+
+```{r}
+save(crime_lga_tot_incidents, file = "final_dat/total_incidents.rda")
+save(crime_lga_offence, file = "final_dat/offence.rda")
+save(crime_lga_offence_bypostcode, file = "final_dat/offence_by_postcode.rda")
+save(crime_lga_location, file = "final_dat/location_type.rda")
+save(crime_lga_status, file = "final_dat/status.rda")
+
+save(clean_ssl, file = "final_dat/satisfaction_living_standard.rda")
+save(SED_index, file = "final_dat/se_disadvantage.rda")
+save(EandO_index, file = "final_dat/edu_occupation.rda")
+```
+
+
+
+

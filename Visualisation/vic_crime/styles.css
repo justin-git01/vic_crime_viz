@@ -1,0 +1,21 @@
+.skin-blue .main-header .logo {
+  background-color: #a9363e; /* Change the background color */
+  color: #fff;
+  border-bottom: 0 solid transparent;
+   height: 100px
+}
+
+.skin-blue .main-header .navbar {
+  background-image: "image1.jpeg";
+  background-size: cover; /* Adjust as needed */
+  background-repeat: no-repeat;
+  background-size: cover; /* Adjust as needed */
+  height: 100px; /* Set the desired height */
+}
+
+.content-wrapper, .right-side {
+  min-height: 220vh; /* Set the minimum height to 100% of viewport height */
+  background-color: #F5F5DC;
+  z-index: 800;
+}
+
